@@ -60,6 +60,17 @@ class DmlGraphHelper:
 
 
 class TestInferenceSessionWithDmlGraph(unittest.TestCase):
+    def test_invalid_device_id_reports_directml_error(self):
+        if "DmlExecutionProvider" not in onnxrt.get_available_providers():
+            self.skipTest("DirectML execution provider is not available")
+
+        with self.assertRaisesRegex(Exception, "Invalid DirectML device_id 99"):
+            onnxrt.InferenceSession(
+                get_name("mul_1.onnx"),
+                providers=[("DmlExecutionProvider", {"device_id": 99})],
+                enable_fallback=False,
+            )
+
     def test_ort_value_update_in_place(self):
         x0 = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=np.float32)
         ortvalue_cpu = onnxrt.OrtValue.ortvalue_from_numpy(x0)

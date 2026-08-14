@@ -512,7 +512,11 @@ Microsoft::WRL::ComPtr<ID3D12Device> DMLProviderFactoryCreator::CreateD3D12Devic
     ORT_THROW_IF_FAILED(CreateDXGIFactory2(0, IID_GRAPHICS_PPV_ARGS(dxgi_factory.ReleaseAndGetAddressOf())));
 
     ComPtr<IDXGIAdapter1> adapter;
-    ORT_THROW_IF_FAILED(dxgi_factory->EnumAdapters1(device_id, &adapter));
+    const HRESULT enum_adapter_result = dxgi_factory->EnumAdapters1(device_id, &adapter);
+    if (enum_adapter_result == DXGI_ERROR_NOT_FOUND) {
+      ORT_THROW("Invalid DirectML device_id ", device_id, ": no matching DXGI adapter was found.");
+    }
+    ORT_THROW_IF_FAILED(enum_adapter_result);
 
     // Disallow using DML with the software adapter (Microsoft Basic Display Adapter) because CPU evaluations are much
     // faster. Some scenarios though call for EP initialization without this check (as execution will not actually occur
