@@ -1,7 +1,11 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 # pylint: disable=C0114,C0115,C0116,W0212
+import contextlib
+import io
+import tempfile
 import unittest
+from unittest import mock
 
 import onnxruntime
 
@@ -73,6 +77,43 @@ class TestGetNvidiaDllPaths(unittest.TestCase):
 
         cuda_only = self._paths(is_windows=False, build_cuda_version="13.2", cuda=True, cudnn=False)
         self.assertTrue(all(p[1] == "cu13" for p in cuda_only))
+
+
+class TestPreloadDlls(unittest.TestCase):
+    def test_optional_cuda_libraries_do_not_report_load_failures(self):
+        cuda_paths = [
+            ("nvidia", "cublas", "lib", "libcublasLt.so.12"),
+            ("nvidia", "cublas", "lib", "libcublas.so.12"),
+            ("nvidia", "cuda_nvrtc", "lib", "libnvrtc.so.12"),
+            ("nvidia", "curand", "lib", "libcurand.so.10"),
+            ("nvidia", "cufft", "lib", "libcufft.so.11"),
+            ("nvidia", "cuda_runtime", "lib", "libcudart.so.12"),
+        ]
+        cudnn_paths = [("nvidia", "cudnn", "lib", "libcudnn.so.9")]
+
+        def fake_paths(is_windows, cuda=True, cudnn=True):
+            self.assertFalse(is_windows)
+            return (cuda_paths if cuda else []) + (cudnn_paths if cudnn else [])
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = io.StringIO()
+            with (
+                mock.patch.object(onnxruntime, "cuda_version", "12.4"),
+                mock.patch.object(onnxruntime, "_get_nvidia_dll_paths", side_effect=fake_paths),
+                mock.patch.object(onnxruntime, "_register_bundled_cuda_plugin_ep"),
+                mock.patch("platform.system", return_value="Linux"),
+                mock.patch("ctypes.CDLL", side_effect=OSError("not found")),
+                contextlib.redirect_stdout(output),
+            ):
+                onnxruntime.preload_dlls(directory=directory)
+
+        messages = output.getvalue()
+        self.assertNotIn("libnvrtc.so.12", messages)
+        self.assertNotIn("libcufft.so.11", messages)
+        self.assertNotIn("libcudnn.so.9", messages)
+        self.assertIn("libcublas.so.12", messages)
+        self.assertIn("libcurand.so.10", messages)
+        self.assertIn("libcudart.so.12", messages)
 
 
 if __name__ == "__main__":

@@ -467,6 +467,13 @@ def preload_dlls(cuda: bool = True, cudnn: bool = True, msvc: bool = True, direc
     # Try load DLLs from nvidia site packages.
     dll_paths = _get_nvidia_dll_paths(is_windows, cuda, cudnn)
     optional_dll_filenames = {relative_path[-1] for relative_path in _get_nvidia_dll_paths(is_windows, False, cudnn)}
+    if cuda:
+        optional_cuda_libraries = ("cufft", "nvrtc")
+        optional_dll_filenames.update(
+            relative_path[-1]
+            for relative_path in dll_paths
+            if any(library in relative_path[-1].lower() for library in optional_cuda_libraries)
+        )
     loaded_dlls = []
     for relative_path in dll_paths:
         dll_path = (
