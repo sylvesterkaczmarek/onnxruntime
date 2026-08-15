@@ -533,7 +533,12 @@ bool ReshapeFusion::FuseContiguousReshapes(Node& reshape, Graph& graph) {
       break;
     }
 
-    Node* next_node = graph.GetNode(curr_node.OutputNodesBegin()->Index());
+    const auto& output_edge = *curr_node.OutputEdgesBegin();
+    if (output_edge.GetDstArgIndex() != 0) {
+      break;
+    }
+
+    Node* next_node = graph.GetNode(output_edge.GetNode().Index());
     if (next_node->OpType() != "Reshape" && next_node->OpType() != "Squeeze" && next_node->OpType() != "Unsqueeze") {
       break;
     }
