@@ -1,16 +1,16 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-const assert = require('assert').strict;
-const fs = require('fs');
-const http = require('http');
-const os = require('os');
-const path = require('path');
+import assert from 'assert';
+import * as fs from 'fs';
+import * as http from 'http';
+import * as os from 'os';
+import * as path from 'path';
 
 const { downloadFile, downloadJson } = require('../../../script/install-utils');
 
 describe('install-utils downloads', () => {
-  let server: ReturnType<typeof http.createServer>;
+  let server: http.Server;
   let baseUrl: string;
 
   before((done) => {
@@ -57,7 +57,7 @@ describe('install-utils downloads', () => {
 
   it('follows redirects when downloading JSON', async () => {
     const data = await downloadJson(`${baseUrl}/json-start`);
-    assert.deepEqual(data, { redirected: true });
+    assert.deepStrictEqual(data, { redirected: true });
   });
 
   it('follows redirects when downloading files', async () => {
@@ -66,7 +66,7 @@ describe('install-utils downloads', () => {
 
     try {
       await downloadFile(`${baseUrl}/file-start`, destination);
-      assert.equal(fs.readFileSync(destination, 'utf8'), 'redirected file');
+      assert.strictEqual(fs.readFileSync(destination, 'utf8'), 'redirected file');
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
