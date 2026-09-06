@@ -28,7 +28,8 @@ static bool IsSupportedDataType(const Node& node) {
 }
 
 static bool IsSupportedCpuGeluTargetDataType(const Node& node, std::string_view target_domain) {
-  if (node.GetExecutionProviderType() != kCpuExecutionProvider) {
+  const auto& provider_type = node.GetExecutionProviderType();
+  if (!provider_type.empty() && provider_type != kCpuExecutionProvider) {
     return true;
   }
 
@@ -37,9 +38,10 @@ static bool IsSupportedCpuGeluTargetDataType(const Node& node, std::string_view 
     return false;
   }
 
+  // An empty provider means Level 1 is running before partitioning, so preserve CPU fallback.
   // com.microsoft.Gelu(1) has a CPU kernel only for float. The official ONNX Gelu(20)
-  // CPU kernel also supports float16. Do not create a fused CPU node that the selected
-  // target operator cannot execute.
+  // CPU kernel also supports float16. Explicitly assigned non-CPU providers retain their
+  // provider-specific dtype support.
   if (target_domain == kMSDomain) {
     return *input_type == "tensor(float)";
   }
