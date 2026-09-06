@@ -28,6 +28,18 @@ void BuildQuickGeluGraph(ModelTestBuilder& builder) {
   builder.AddNode("Mul", {input, sigmoid}, {output});
 }
 
+void BuildResizeWithEmptyOptionalInputs(ModelTestBuilder& builder) {
+  auto* input = builder.MakeInput<float>(
+      {1, 1, 2, 2},
+      std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f});
+  auto* roi = builder.MakeEmptyInput();
+  auto* scales = builder.MakeEmptyInput();
+  auto* sizes = builder.MakeInitializer<int64_t>({4}, {1, 1, 4, 4});
+  auto* output = builder.MakeOutput<float>({1, 1, 4, 4});
+
+  builder.AddNode("Resize", {input, roi, scales, sizes}, {output});
+}
+
 }  // namespace
 
 TEST(QuickGeluFusionTest, CpuFloatIsFused) {
@@ -50,6 +62,17 @@ TEST(QuickGeluFusionTest, CpuDoubleIsNotFused) {
 
   TransformerTester(BuildQuickGeluGraph<double>, check_graph,
                     TransformerLevel::Level1, TransformerLevel::Level2, 13, 1e-12);
+}
+
+TEST(QuickGeluFusionTest, CpuNodeWithEmptyOptionalInputDoesNotCrash) {
+  auto check_graph = [](InferenceSessionWrapper& session) {
+    auto op_to_count = CountOpsInGraph(session.GetGraph());
+    EXPECT_EQ(op_to_count["Resize"], 1);
+    EXPECT_EQ(op_to_count["com.microsoft.QuickGelu"], 0);
+  };
+
+  TransformerTester(BuildResizeWithEmptyOptionalInputs, check_graph,
+                    TransformerLevel::Level1, TransformerLevel::Level2, 13, 1e-5);
 }
 
 }  // namespace test
