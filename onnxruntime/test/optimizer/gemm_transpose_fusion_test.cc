@@ -114,6 +114,56 @@ void RunWeightTransposeTest(const std::vector<int64_t>& perm,
   EXPECT_EQ(resulting_gemm->GetAttributes().at("transB").i(), expected_trans_b);
 }
 
+void RunOutputTransposeTest(const std::vector<int64_t>& perm, bool expect_fusion) {
+  auto& logger = DefaultLoggingManager().DefaultLogger();
+  Model model("GemmOutputTransposeFusionPermutation", false, ModelMetaData(), PathString(),
+              IOnnxRuntimeOpSchemaRegistryList(), {{kOnnxDomain, 13}}, {}, logger);
+  Graph& graph = model.MainGraph();
+  ModelTestBuilder builder(graph);
+
+  auto* input_a = builder.MakeInput<float>({2, 3}, -1.0f, 1.0f);
+  auto* input_b = builder.MakeInput<float>({3, 4}, -1.0f, 1.0f);
+  auto* gemm_output = builder.MakeIntermediate();
+  Node& gemm = builder.AddNode("Gemm", {input_a, input_b}, {gemm_output});
+  gemm.AddAttribute("transA", int64_t{0});
+  gemm.AddAttribute("transB", int64_t{0});
+  gemm.AddAttribute("alpha", 1.0f);
+  gemm.AddAttribute("beta", 1.0f);
+
+  auto* output = builder.MakeOutput();
+  Node& transpose = builder.AddNode("Transpose", {gemm_output}, {output});
+  transpose.AddAttribute("perm", perm);
+
+  ASSERT_STATUS_OK(graph.Resolve());
+
+  RuleBasedGraphTransformer transformer("GemmTransposeFusionTest");
+  ASSERT_STATUS_OK(transformer.Register(std::make_unique<GemmTransposeFusion>()));
+
+  bool modified = false;
+  ASSERT_STATUS_OK(transformer.Apply(graph, modified, logger));
+  ASSERT_STATUS_OK(graph.Resolve());
+
+  EXPECT_EQ(modified, expect_fusion);
+  auto op_counts = CountOpsInGraph(graph);
+  EXPECT_EQ(op_counts["Transpose"], expect_fusion ? 0 : 1);
+  EXPECT_EQ(op_counts["Gemm"], 1);
+
+  const Node* resulting_gemm = nullptr;
+  for (const auto& graph_node : graph.Nodes()) {
+    if (graph_node.OpType() == "Gemm") {
+      resulting_gemm = &graph_node;
+      break;
+    }
+  }
+
+  ASSERT_NE(resulting_gemm, nullptr);
+  EXPECT_EQ(resulting_gemm->GetAttributes().at("transA").i(), expect_fusion ? 1 : 0);
+  EXPECT_EQ(resulting_gemm->GetAttributes().at("transB").i(), expect_fusion ? 1 : 0);
+  ASSERT_EQ(resulting_gemm->InputDefs().size(), 2U);
+  EXPECT_EQ(resulting_gemm->InputDefs()[0]->Name(), (expect_fusion ? input_b : input_a)->Name());
+  EXPECT_EQ(resulting_gemm->InputDefs()[1]->Name(), (expect_fusion ? input_a : input_b)->Name());
+}
+
 }  // namespace
 
 TEST(GemmTransposeFusionTest, IdentityInputTransposeIsNotFolded) {
@@ -130,6 +180,14 @@ TEST(GemmTransposeFusionTest, IdentityWeightTransposeIsNotFolded) {
 
 TEST(GemmTransposeFusionTest, MatrixWeightTransposeIsFolded) {
   RunWeightTransposeTest({1, 0}, {5, 4}, true, 1);
+}
+
+TEST(GemmTransposeFusionTest, IdentityOutputTransposeIsNotFolded) {
+  RunOutputTransposeTest({0, 1}, false);
+}
+
+TEST(GemmTransposeFusionTest, MatrixOutputTransposeIsFolded) {
+  RunOutputTransposeTest({1, 0}, true);
 }
 
 }  // namespace test
